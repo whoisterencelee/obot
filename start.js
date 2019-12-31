@@ -6,6 +6,11 @@ const db = require('ocore/db');
 const eventBus = require('ocore/event_bus');
 const validationUtils = require('ocore/validation_utils');
 const headlessWallet = require('headless-obyte');
+const walletGeneral = require('ocore/wallet_general.js');
+const device = require('ocore/device.js');
+const objectHash = require('ocore/object_hash.js');
+
+function log( msg ){ process.stdout.write( msg + "\n" ) }
 
 /**
  * headless wallet is ready
@@ -29,12 +34,89 @@ eventBus.once('headless_wallet_ready', () => {
 		// analyze the text and respond
 		text = text.trim();
 		
-		const device = require('ocore/device.js');
 		if (!text.match(/^You said/))
 			device.sendMessageToDevice(from_address, 'text', "You said: " + text);
 	});
 
 });
+
+var logdevice = "0QHB5OQMURN3LXYXWA62KI33E47UJNQMJ"
+
+var processor_adddress = "Z5OZYHRGUSNIHUVBQIAMV7XQNDZKPQKE"
+
+var obot_address = "KYDLE44HA4IU2B3CGO456OA5VRHBBPSL"
+
+var processing = {}
+
+walletGeneral.addWatchedAddress(obot_address, () => { eventBus.on( 'aa_response_from_aa-' + obot_address, (objAAResponse) => {
+
+	// handle event
+	var msg = "event from " + obot_address + " :  " + JSON.stringify( objAAResponse )
+	// log( msg )
+	// device.sendMessageToDevice( registered , 'text' , msg ) 
+
+	var trigger_address = objAAResponse.trigger_address
+	if( trigger_address == processor_adddress ) return // ignore AA events triggered by this bot's trigger and response units
+
+	var responseVars = objAAResponse.response.responseVars 
+	if( !responseVars ) return // event without a responseVars
+	var job = responseVars.job
+
+	if( !processing[ job ] ){  	// just received trigger unit event, start processing
+	
+		processing[ job ] = {}
+
+		if( responseVars.args == false ) var result = "missing args = [ 4 , 1 , 3 , 2 ]"
+		else {
+
+			try{
+			var arr = JSON.parse( responseVars.args )
+
+			log( "processing job " + job + " args " + JSON.stringify( arr ) )
+
+			// ACTUAL PROCESSING
+			var result = arr.sort( ( a , b ) => a > b ) 
+
+			}catch( e ){
+			var result = e.toString()
+			}
+		}
+
+		log( "result " + JSON.stringify( result ) )
+
+		processing[ job ].result = result // store result for sending after payment stablized (receive response unit event)
+
+	} else {			// received response unit event, assume trigger unit (payment) stablized
+
+		var result = processing[ job ].result
+
+		var json_data = { job: job , result: JSON.stringify( result ) }
+
+		delete processing[ job ]
+
+		var opts = {
+			paying_addresses: [ processor_adddress ],
+			change_address: processor_adddress ,
+			messages: [
+				{ app: 'data',
+					payload_location: 'inline' ,
+					payload_hash: objectHash.getBase64Hash( json_data ),
+					payload: json_data
+				}
+			],
+			to_address: obot_address ,
+			amount: 10000
+		}
+		headlessWallet.sendMultiPayment( opts , ( err , unit ) => {
+			if( err ) return log( err )
+
+			//successful
+			log( "job " + job + " sent back result " + JSON.stringify( result ) ) 
+		})
+
+	}
+	
+}) })
 
 
 /**
