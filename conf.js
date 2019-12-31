@@ -22,6 +22,8 @@ exports.bSingleAddress = false;
 exports.bStaticChangeAddress = true;
 exports.KEYS_FILENAME = 'keys.json';
 
+exports.LOG_FILENAME = '/dev/null';
+
 // emails
 exports.admin_email = '';
 exports.from_email = '';
